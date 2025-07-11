@@ -1,0 +1,1 @@
+node bybit_farm.js --symbol=PNUTUSDT --interval=2 --TP=1.05 --TPF=1.25 --GP=0.3 --GG=0 --BALERT=20 --BSTOP=10 --RA=0.01

@@ -1,0 +1,1 @@
+node bybit_farm.js --symbol=LTCUSDT --interval=2 --TP=1.5 --TPF=2.5 --GP=0.5 --GG=1 --BALERT=20 --BSTOP=10 --RA=0.01

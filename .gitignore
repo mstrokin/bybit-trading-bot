@@ -1,0 +1,8 @@
+node_modules
+*.log
+BYBIT_COOKIE
+
+*_balance.csv
+.DS_Store
+*.sqlite3
+*.zip

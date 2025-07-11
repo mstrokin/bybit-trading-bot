@@ -1,0 +1,1 @@
+node bybit_farm.js --symbol=HYPEUSDT --interval=2 --TP=1.25 --TPF=2.5 --GP=1 --GG=0 --BALERT=20 --BSTOP=10 --RA=0.01

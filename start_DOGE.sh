@@ -1,0 +1,1 @@
+node bybit_farm.js --symbol=DOGEUSDT --interval=2 --TP=1.65 --TPF=2.5 --GP=0.6 --GG=1 --BALERT=20 --BSTOP=10 --RA=0.01

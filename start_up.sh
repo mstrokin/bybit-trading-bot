@@ -1,0 +1,1 @@
+node bybit_up.js --interval=3

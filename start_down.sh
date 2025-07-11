@@ -1,0 +1,1 @@
+node bybit_down.js --interval=2
