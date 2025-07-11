@@ -1,3 +1,9 @@
+# Introduction videos
+
+[How to manipulate Bitcoin (in Russian)](https://www.youtube.com/watch?v=7bL--MIvlhs)
+
+[How to make money in markets (in Russian)](https://www.youtube.com/watch?v=wbZp0lFCZaU)
+
 # Installation
 
 0. Install dependencies:
