@@ -400,7 +400,7 @@ const upCurrency = async (symbol, leverage = 20) => {
   console.log("upping symbol");
   const grid_mode = "FUTURE_GRID_MODE_SHORT";
   const grid_type = "FUTURE_GRID_TYPE_GEOMETRIC";
-  const currentPrice = currenciesRates[symbol]; //todo: get current price;
+  const currentPrice = currenciesRates[symbol];
   let minPrice = Number(currentPrice * (1 - PRICE_DOWN_GAP)).toFixed(
     currenciesDecimals[symbol]
   );
@@ -472,7 +472,7 @@ const downCurrency = async (symbol, leverage = 20) => {
   console.log("downCurrency symbol", symbol);
   const grid_mode = "FUTURE_GRID_MODE_LONG";
   const grid_type = "FUTURE_GRID_TYPE_GEOMETRIC";
-  const currentPrice = currenciesRates[symbol]; //todo: get current price;
+  const currentPrice = currenciesRates[symbol];
   let minPrice = Number(currentPrice * (1 - PRICE_DOWN_GAP)).toFixed(
     currenciesDecimals[symbol]
   );
