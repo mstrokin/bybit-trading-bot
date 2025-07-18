@@ -1,0 +1,1 @@
+node bybit_farm.js --symbol=1000BONKUSDT --interval=2 --TP=4 --TPF=5 --GP=2 --GG=0 --BALERT=2 --BSTOP=1 --RA=0.025

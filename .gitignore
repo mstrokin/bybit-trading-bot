@@ -6,3 +6,4 @@ BYBIT_COOKIE
 .DS_Store
 *.sqlite3
 *.zip
+.env

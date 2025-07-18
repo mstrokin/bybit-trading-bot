@@ -1,8 +1,9 @@
+require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
-const token = ""; //TODO: ADD YOUR BOT TOKEN HERE
-//const TGbot = new TelegramBot(token, { polling: true });
+const token = process.env.TOKEN;
+//const TGbot = new TelegramBot(token, { polling: false });
 const fs = require("node:fs");
-const USER_CHAT_ID = ""; //TODO: ADD YOUR TG ID HERE
+const USER_CHAT_ID = process.env.USER_CHAT_ID;
 
 const sendTGMessage = async (message) => {
   //return await TGbot.sendMessage(USER_CHAT_ID, message);
