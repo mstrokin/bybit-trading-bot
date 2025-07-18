@@ -232,6 +232,8 @@ const BOT_RESTART_DELAY = 30_000;
 
 const CANCELLED_BOTS = new Map();
 
+const MAX_RETRIES = 10;
+
 let CURRENT_TRADING_BALANCE = 0;
 let CURRENT_POSITION_SIZE = 0;
 
@@ -402,13 +404,15 @@ const closeAndRecreate = async (grid) => {
   if (closed) {
     CANCELLED_BOTS.set(grid.bot_id, +new Date());
     console.log(`Bot closed! Recreating after ${BOT_CREATION_DELAY}ms!`);
-    //while (true) {
-    await sleep(BOT_CREATION_DELAY);
-    const recreated = await recreateGrid(grid);
-    //if (recreated) {
-    return;
-    //}
-    //}
+    let tries = 0;
+    while (true) {
+      tries++;
+      await sleep(BOT_CREATION_DELAY);
+      const recreated = await recreateGrid(grid);
+      if (recreated || tries > MAX_RETRIES) {
+        return;
+      }
+    }
   }
 };
 const PROFIT_BY_GRID = new Map();
