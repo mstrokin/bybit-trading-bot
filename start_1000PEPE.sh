@@ -1,1 +1,1 @@
-node bybit_farm.js --symbol=1000PEPEUSDT --TP=1.25 --TPF=1.5 --GP=0.5 --GG=0 --BALERT=20 --BSTOP=10 --RA=0.01
+node bybit_farm.js --symbol=1000PEPEUSDT --interval=2 --TP=2 --TPF=2.5 --GP=1 --GG=0 --BALERT=20 --BSTOP=10 --RA=0

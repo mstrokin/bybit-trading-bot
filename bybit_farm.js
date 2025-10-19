@@ -13,7 +13,11 @@ const fs = require("node:fs");
 const USER_CHAT_ID = process.env.USER_CHAT_ID;
 
 const sendTGMessage = async (message) => {
-  return await TGbot.sendMessage(USER_CHAT_ID, message);
+  try {
+    return await TGbot.sendMessage(USER_CHAT_ID, message);
+  } catch (error) {
+    console.log("error in sending message", message, error);
+  }
 };
 
 const path = process.cwd();
@@ -202,7 +206,7 @@ const RE_INVEST_AMOUNT_USD_LOW = args["RA"] || 0.005;
 
 const RE_INVEST_AMOUNT_USD_HIGH = 0.042;
 
-const RE_INVEST_TRESHOLD_PCT_LOW = -32;
+const RE_INVEST_TRESHOLD_PCT_LOW = -30;
 
 const RE_INVEST_APR_LOW = -7000;
 
@@ -226,9 +230,9 @@ const ARBITRAGE_NUM_MAX = 5000;
 
 const ARBITRAGE_NUM_MIN = 5;
 
-const BOT_CREATION_DELAY = 500;
+const BOT_CREATION_DELAY = 35_000;
 
-const BOT_RESTART_DELAY = 30_000;
+const BOT_RESTART_DELAY = 65_000;
 
 const CANCELLED_BOTS = new Map();
 
@@ -320,6 +324,7 @@ const getNumberFromPct = (number) => {
 };
 
 const checkIfShouldReinvest = async (grid) => {
+  if (Number(RE_INVEST_AMOUNT_USD_LOW) <= 0) return;
   const gridProfitPercent = getNumberFromPct(grid.pnl_per);
   const botId = grid.bot_id;
   if (Number(CURRENT_TRADING_BALANCE) < RE_INVEST_AMOUNT_USD_LOW) {
@@ -410,6 +415,9 @@ const closeAndRecreate = async (grid) => {
       await sleep(BOT_CREATION_DELAY);
       const recreated = await recreateGrid(grid);
       if (recreated || tries > MAX_RETRIES) {
+        if (tries > MAX_RETRIES) {
+          sendTGMessage(`Failed to create a bot! ${JSON.stringify(grid)}`);
+        }
         return;
       }
     }

@@ -1,1 +1,1 @@
-node bybit_farm.js --symbol=STRKUSDT --interval=2 --TP=4 --TPF=5 --GP=2 --GG=0 --BALERT=2 --BSTOP=1 --RA=0.025
+node bybit_farm.js --symbol=STRKUSDT --interval=2 --TP=2 --TPF=2.5 --GP=1 --GG=0 --BALERT=20 --BSTOP=10 --RA=0
