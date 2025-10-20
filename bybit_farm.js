@@ -236,7 +236,7 @@ const BOT_RESTART_DELAY = 65_000;
 
 const CANCELLED_BOTS = new Map();
 
-const MAX_RETRIES = 10;
+const MAX_RETRIES = 100;
 
 let CURRENT_TRADING_BALANCE = 0;
 let CURRENT_POSITION_SIZE = 0;
@@ -386,12 +386,12 @@ const recreateGrid = async (grid) => {
     USDFuturesTradingBalance < new_investment &&
     USDFuturesTradingBalance - new_investment > INSUFFICIENT_FUNDS_LIMIT
   ) {
-    new_investment = USDFuturesTradingBalance - 0.01;
+    //new_investment = USDFuturesTradingBalance - 0.01;
   } else if (USDFuturesTradingBalance < new_investment) {
     new_investment = new_investment;
   }
   console.log(msg);
-  //sendTGMessage(msg);
+  sendTGMessage(msg);
   return await createGrid(
     new_investment,
     grid.symbol,
@@ -413,7 +413,10 @@ const closeAndRecreate = async (grid) => {
     while (true) {
       tries++;
       await sleep(BOT_CREATION_DELAY);
-      const recreated = await recreateGrid(grid);
+      let recreated;
+      try {
+        recreated = await recreateGrid(grid);
+      } catch (error) {}
       if (recreated || tries > MAX_RETRIES) {
         if (tries > MAX_RETRIES) {
           sendTGMessage(`Failed to create a bot! ${JSON.stringify(grid)}`);
