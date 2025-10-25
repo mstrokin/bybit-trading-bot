@@ -1,1 +1,1 @@
-node bybit_farm.js --symbol=ETHUSDT --interval=2 --TP=2 --TPF=2.5 --GP=1 --GG=0 --BALERT=20 --BSTOP=10 --RA=0
+node bybit_farm.js --symbol=ETHUSDT --interval=5 --TP=1.5 --TPF=2 --GP=0.5 --GG=0 --BALERT=20 --BSTOP=10 --RA=0.001

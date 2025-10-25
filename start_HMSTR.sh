@@ -1,1 +1,1 @@
-node bybit_farm.js --symbol=HMSTRUSDT --interval=2 --TP=4 --TPF=5 --GP=2 --GG=0 --BALERT=2 --BSTOP=1 --RA=0.025
+node bybit_farm.js --symbol=HMSTRUSDT --interval=5 --TP=1.5 --TPF=2 --GP=0.5 --GG=0 --BALERT=20 --BSTOP=10 --RA=0.001
