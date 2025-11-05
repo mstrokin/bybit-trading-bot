@@ -1,1 +1,1 @@
-node bybit_farm.js --symbol=MELANIAUSDT --interval=5 --TP=1.5 --TPF=2 --GP=0.5 --GG=0 --BALERT=20 --BSTOP=10 --RA=0.001
+node bybit_farm.js --symbol=MELANIAUSDT --interval=2 --TP=1.5 --TPF=2 --GP=0.5 --GG=0 --BALERT=20 --BSTOP=10 --RA=0.01
