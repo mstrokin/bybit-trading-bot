@@ -262,7 +262,7 @@ const BOT_RESTART_DELAY = 65_000;
 
 const CANCELLED_BOTS = new Map();
 
-const MAX_RETRIES = 100;
+const MAX_RETRIES = 3;
 
 const LOW_PNL_THRESHOLD = -10;
 
@@ -841,12 +841,18 @@ const farm = async () => {
       ""
     )} direction due to low PnL`;
     console.log(rescueMsg);
-    const created = await createMinimalBot(SYMBOL, oppositeMode, RESCUE_GAP);
-    if (created) {
-      sendTGMessage(`Rescue bot created successfully for ${SYMBOL}`);
-      lastRescueTime = Date.now();
+    if (grids.length < 50) {
+      const created = await createMinimalBot(SYMBOL, oppositeMode, RESCUE_GAP);
+      if (created) {
+        sendTGMessage(`Rescue bot created successfully for ${SYMBOL}`);
+        lastRescueTime = Date.now();
+      } else {
+        //sendTGMessage(`Failed to create rescue bot for ${SYMBOL}`);
+      }
     } else {
-      //sendTGMessage(`Failed to create rescue bot for ${SYMBOL}`);
+      const skipMsg = `Max bots (50) reached, skipping rescue for ${SYMBOL}`;
+      console.log(skipMsg);
+      //sendTGMessage(skipMsg);
     }
   }
 

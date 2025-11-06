@@ -1,3 +1,7 @@
+# Donation address
+
+BTC only: bc1qlwz7qu5f4xrg2gwzxjh934rvrufrldnjzpegap
+
 # Introduction videos
 
 [How to manipulate Bitcoin (in Russian)](https://www.youtube.com/watch?v=7bL--MIvlhs)
@@ -24,9 +28,9 @@ and have pm2 installed on your system
 1. Have $250+ in the account
 
 2. Use
-   pm2 start ./start_up.sh
+   pm2 start ./start_up.sh  # for up bots (short mode)
    or
-   pm2 start ./start_down.sh
+   pm2 start ./start_down.sh  # for down bots (long mode)
 ```
 
 # To Farm
@@ -37,6 +41,8 @@ and have pm2 installed on your system
 2. To watch over a bot (to farm USDT), run
    pm2 start ./start_DOGE.sh
 ```
+
+Note: up/down bots now merged into `grid-bot.js` with `--direction=up|down`.
 
 To configure currencies, bot settings, etc, copy start_DOGE.sh into a different file and adjust the settings
 
