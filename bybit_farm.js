@@ -139,6 +139,10 @@ const createGrid = async (
         "ERROR: Not enough money in the account to create a bot!!!"
       );
       return false;
+    } else if (result.bot_id == "0") {
+      console.log("result= ", result);
+      sendTGMessage("ERROR: Failed to create a bot (hz why)!!!");
+      return false;
     }
     console.log("CREATED?", futuresGrid?.result);
     return true;
@@ -260,11 +264,11 @@ const CANCELLED_BOTS = new Map();
 
 const MAX_RETRIES = 100;
 
-const LOW_PNL_THRESHOLD = -15;
+const LOW_PNL_THRESHOLD = -10;
 
 const RESCUE_PNL_THRESHOLD = -25;
 
-const RESCUE_GAP = 0.01; // 1%
+const RESCUE_GAP = 0.015; // 1%
 
 let lastLowPnlAlert = 0;
 
@@ -837,13 +841,12 @@ const farm = async () => {
       ""
     )} direction due to low PnL`;
     console.log(rescueMsg);
-    sendTGMessage(rescueMsg);
     const created = await createMinimalBot(SYMBOL, oppositeMode, RESCUE_GAP);
     if (created) {
       sendTGMessage(`Rescue bot created successfully for ${SYMBOL}`);
       lastRescueTime = Date.now();
     } else {
-      sendTGMessage(`Failed to create rescue bot for ${SYMBOL}`);
+      //sendTGMessage(`Failed to create rescue bot for ${SYMBOL}`);
     }
   }
 
