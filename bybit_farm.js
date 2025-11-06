@@ -7,6 +7,8 @@ const { pms } = require("@wilcosp/ms-prettify");
 
 const clearConsole = require("console-clear");
 
+const { createMinimalBot } = require("./lib/bybit-utils");
+
 const token = process.env.TOKEN;
 const TGbot = new TelegramBot(token, { polling: false });
 const fs = require("node:fs");
@@ -18,6 +20,26 @@ const sendTGMessage = async (message) => {
   } catch (error) {
     console.log("error in sending message", message, error);
   }
+};
+
+const getCurrentPrice = async (symbol) => {
+  const requestOptions = {
+    method: "GET",
+    headers: getHeaders(),
+  };
+  try {
+    const res = await fetch(
+      `https://api.bybit.com/v5/market/tickers?category=linear&symbol=${symbol}`,
+      requestOptions
+    );
+    const data = await res.json();
+    if (data.retCode === 0) {
+      return parseFloat(data.result.list[0].lastPrice);
+    }
+  } catch (error) {
+    console.error("Error fetching price for " + symbol + ":", error);
+  }
+  return null;
 };
 
 const path = process.cwd();
@@ -237,6 +259,16 @@ const BOT_RESTART_DELAY = 65_000;
 const CANCELLED_BOTS = new Map();
 
 const MAX_RETRIES = 100;
+
+const LOW_PNL_THRESHOLD = -15;
+
+const RESCUE_PNL_THRESHOLD = -25;
+
+const RESCUE_GAP = 0.01; // 1%
+
+let lastLowPnlAlert = 0;
+
+let lastRescueTime = 0;
 
 let CURRENT_TRADING_BALANCE = 0;
 let CURRENT_POSITION_SIZE = 0;
@@ -607,37 +639,13 @@ const getUSDBalance = async () => {
   return assets;
 };
 
-const getPositionSize = async () => {
-  const assets = await getAssets();
-  //console.log("assets = ", assets);
-  if (assets?.ret_code !== 0) {
-    console.error("ERROR:", JSON.stringify(assets));
-    return;
-  }
-  if (assets.result?.status_code !== 200) {
-    console.error("ERROR:", JSON.stringify(assets));
-    return;
-  }
-  const bots = assets.result.assets;
-  //console.log("bots = ", bots[0]);
-  let position_size = 0;
-  bots
-    .filter((bot) => {
-      return bot.symbol == SYMBOL;
-    })
-    .map((bot) => {
-      position_size += Number(Number.parseFloat(bot.current_position));
-    });
-  return position_size;
-};
-
 const toTwoDecimals = (val) => {
   return Number(val).toFixed(2);
 };
 const toFourDecimals = (val) => {
   return Number(val).toFixed(4);
 };
-const checkAssets = async (sales = 0, green) => {
+const checkAssets = async (sales = 0, green, position_size = null) => {
   const USDBalance = await getUSDBalance();
   if (!USDBalance) {
     await sendTGMessage("ERROR: Balance is 0; something is wrong?");
@@ -646,7 +654,8 @@ const checkAssets = async (sales = 0, green) => {
   let posSizeFn = (txt) => {
     return txt;
   };
-  let newPositionSize = await getPositionSize();
+  let newPositionSize =
+    position_size !== null ? position_size : await getPositionSize();
   if (newPositionSize > CURRENT_POSITION_SIZE) {
     posSizeFn = clc.green;
   } else if (newPositionSize < CURRENT_POSITION_SIZE) {
@@ -758,6 +767,86 @@ const farm = async () => {
   }
   //console.error("REINVEST COMPLETE");
 
+  // Check for low PnL and send throttled alert
+  let hasLowPnl = false;
+  let worstPnl = 0;
+  let worstBotId = "";
+  let hasLong = false;
+  let hasShort = false;
+  for (let grid of grids) {
+    const gridProfitPercent = getNumberFromPct(grid.pnl_per);
+    if (gridProfitPercent < LOW_PNL_THRESHOLD) {
+      hasLowPnl = true;
+      if (gridProfitPercent < worstPnl) {
+        worstPnl = gridProfitPercent;
+        worstBotId = grid.bot_id;
+      }
+    }
+    if (grid.grid_mode === "FUTURE_GRID_MODE_LONG") {
+      hasLong = true;
+    } else if (grid.grid_mode === "FUTURE_GRID_MODE_SHORT") {
+      hasShort = true;
+    }
+  }
+  if (hasLowPnl) {
+    const now = Date.now();
+    if (now - lastLowPnlAlert > 10 * 60 * 1000) {
+      // 10 minutes
+      const alertMsg = `Low PnL alert for ${SYMBOL}: ${worstPnl.toFixed(
+        2
+      )}% on bot ${worstBotId} (threshold ${LOW_PNL_THRESHOLD}%)`;
+      sendTGMessage(alertMsg);
+      lastLowPnlAlert = now;
+    }
+  }
+
+  // Rescue: if low PnL below rescue threshold, no opposite direction, funds available, and throttled
+  let needsRescue = false;
+  for (let grid of grids) {
+    const gridProfitPercent = getNumberFromPct(grid.pnl_per);
+    if (gridProfitPercent < RESCUE_PNL_THRESHOLD) {
+      needsRescue = true;
+      break;
+    }
+  }
+  let oppositeMode = "";
+  if (needsRescue && hasLong && !hasShort) {
+    oppositeMode = "FUTURE_GRID_MODE_SHORT";
+  } else if (needsRescue && hasShort && !hasLong) {
+    oppositeMode = "FUTURE_GRID_MODE_LONG";
+  } else if (needsRescue && hasLong && hasShort) {
+    let worstPnl = Infinity;
+    let worstMode = null;
+    for (let grid of grids) {
+      const pnl = getNumberFromPct(grid.pnl_per);
+      if (pnl < worstPnl) {
+        worstPnl = pnl;
+        worstMode = grid.grid_mode;
+      }
+    }
+    if (worstMode === "FUTURE_GRID_MODE_LONG") {
+      oppositeMode = "FUTURE_GRID_MODE_SHORT";
+    } else if (worstMode === "FUTURE_GRID_MODE_SHORT") {
+      oppositeMode = "FUTURE_GRID_MODE_LONG";
+    }
+  }
+  if (oppositeMode && Date.now() - lastRescueTime > 5 * 60 * 1000) {
+    // 5 minutes throttle
+    const rescueMsg = `Attempting rescue bot for ${SYMBOL} in ${oppositeMode.replace(
+      "FUTURE_GRID_MODE_",
+      ""
+    )} direction due to low PnL`;
+    console.log(rescueMsg);
+    sendTGMessage(rescueMsg);
+    const created = await createMinimalBot(SYMBOL, oppositeMode, RESCUE_GAP);
+    if (created) {
+      sendTGMessage(`Rescue bot created successfully for ${SYMBOL}`);
+      lastRescueTime = Date.now();
+    } else {
+      sendTGMessage(`Failed to create rescue bot for ${SYMBOL}`);
+    }
+  }
+
   let green = false;
   if (sales > 0 && last_sales !== sales) {
     green = true;
@@ -778,7 +867,128 @@ const farm = async () => {
     );
   }
   TOTAL_GRID_PROFIT = TOTAL_GRID_PROFIT.toFixed(2);
-  await checkAssets(sales || 0, green);
+
+  // Fetch assets once for both position size and zero position check
+  const assetsResult = await getAssets();
+  let position_size = 0;
+  if (
+    assetsResult?.ret_code === 0 &&
+    assetsResult.result?.status_code === 200
+  ) {
+    const bots = assetsResult.result.assets;
+    bots
+      .filter((bot) => {
+        return bot.symbol == SYMBOL;
+      })
+      .map((bot) => {
+        position_size += Number(Number.parseFloat(bot.current_position));
+      });
+  } else {
+    console.error(
+      "ERROR fetching assets for position size:",
+      JSON.stringify(assetsResult)
+    );
+  }
+  await checkAssets(sales || 0, green, position_size);
+
+  // Check and shift grids with zero position
+  if (
+    assetsResult?.ret_code === 0 &&
+    assetsResult.result?.status_code === 200
+  ) {
+    const assets = assetsResult.result.assets || [];
+    const symbolAssets = assets.filter((a) => a.symbol === SYMBOL);
+    for (let grid of grids) {
+      const asset = symbolAssets.find((a) => a.bot_id === grid.bot_id);
+      if (asset && Number(asset.current_position) === 0) {
+        const zeroMsg = `Zero position detected for ${grid.bot_id}, preparing to shift`;
+        console.log(zeroMsg);
+        sendTGMessage(zeroMsg);
+        const currentPrice = await getCurrentPrice(SYMBOL);
+        if (!currentPrice) {
+          const priceMsg = `Could not fetch current price for ${SYMBOL} for grid ${grid.bot_id}`;
+          console.log(priceMsg);
+          sendTGMessage(priceMsg);
+          continue;
+        }
+        const oldMin = Number(grid.min_price);
+        const oldMax = Number(grid.max_price);
+        const width = oldMax - oldMin;
+        const halfWidth = width / 2;
+        const newMin = Number(currentPrice - halfWidth).toFixed(4);
+        const newMax = Number(currentPrice + halfWidth).toFixed(4);
+
+        // Calculate new investment similar to recreateGrid
+        const initial_investment = Number(grid.initial_investment);
+        const investment_increase = Number(
+          initial_investment * (GROW_PCT / 100)
+        ).toFixed(4);
+        let new_investment = Number(
+          initial_investment + Number(investment_increase)
+        ).toFixed(4);
+        const USDFuturesTradingBalance = await getUSDFuturesBalance();
+        let shiftMsg = `Shifting ${SYMBOL} grid ${grid.bot_id} due to zero position. `;
+        shiftMsg += `Old range: ${oldMin.toFixed(4)}-${oldMax.toFixed(
+          4
+        )}, new range: ${newMin}-${newMax} (current: ${currentPrice.toFixed(
+          4
+        )}), `;
+        shiftMsg += `investment: $${new_investment} (was $${initial_investment}, +$${investment_increase})`;
+        if (
+          REINVEST_DUST_COLLECTION_ENABLED &&
+          USDFuturesTradingBalance - Number(new_investment) < DUST_LIMIT
+        ) {
+          const dust = Number(
+            USDFuturesTradingBalance - Number(new_investment) - 0.01
+          ).toFixed(4);
+          if (dust > 0) {
+            new_investment = (Number(new_investment) + Number(dust)).toFixed(4);
+            shiftMsg += `, adding dust (+$${dust}) = $${new_investment}`;
+          }
+        }
+        if (USDFuturesTradingBalance < Number(new_investment)) {
+          shiftMsg += ` (note: balance $${USDFuturesTradingBalance.toFixed(
+            4
+          )} may be low)`;
+        }
+        console.log(shiftMsg);
+        sendTGMessage(shiftMsg);
+
+        const closed = await closeGrid(grid.bot_id);
+        if (closed) {
+          CANCELLED_BOTS.set(grid.bot_id, +new Date());
+          const closeMsg = `Closed grid ${grid.bot_id}, waiting ${BOT_CREATION_DELAY}ms to recreate`;
+          console.log(closeMsg);
+          sendTGMessage(closeMsg);
+          await sleep(BOT_CREATION_DELAY);
+          const recreated = await createGrid(
+            new_investment,
+            grid.symbol,
+            newMin,
+            newMax,
+            grid.cell_number,
+            grid.leverage,
+            grid.grid_mode,
+            grid.grid_type
+          );
+          if (recreated) {
+            const successMsg = `Shifted and recreated ${grid.bot_id} successfully`;
+            console.log(successMsg);
+            sendTGMessage(successMsg);
+          } else {
+            sendTGMessage(`Failed to create shifted grid ${grid.bot_id}`);
+          }
+        } else {
+          sendTGMessage(`Failed to close ${grid.bot_id} for shifting`);
+        }
+      }
+    }
+  } else {
+    const assetsError = "Failed to get assets for zero position check";
+    console.error(assetsError);
+    sendTGMessage(assetsError);
+  }
+
   for (grid of grids) {
     await checkIfShouldClose(grid);
   }
