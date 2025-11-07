@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Farm Status Dashboard</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f4f4f4;
+      }
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      .section {
+        margin-bottom: 20px;
+        padding: 15px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+      }
+      .latest {
+        background-color: #e8f5e8;
+      }
+      .totals {
+        background-color: #f0f8ff;
+      }
+      h2 {
+        color: #333;
+      }
+      .stat {
+        margin: 5px 0;
+      }
+      .label {
+        font-weight: bold;
+        color: #555;
+      }
+      .value {
+        color: #007bff;
+      }
+      #lastUpdate {
+        font-size: 0.9em;
+        color: #888;
+      }
+      .loading {
+        color: #888;
+      }
+      .error {
+        color: #dc3545;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Farm Status Dashboard</h1>
+      <div id="lastUpdate">Last updated: Never</div>
+
+      <div id="latest-section" class="section latest" style="display: none">
+        <h2>Latest Update</h2>
+        <div class="stat">
+          <span class="label">Symbol:</span>
+          <span id="latest-symbol" class="value"></span>
+        </div>
+        <div class="stat">
+          <span class="label">Running Bots:</span>
+          <span id="latest-bots" class="value"></span>
+        </div>
+        <div class="stat">
+          <span class="label">Trading Balance:</span>
+          <span id="latest-tradingBalance" class="value"></span> USDT
+        </div>
+        <div class="stat">
+          <span class="label">Profit:</span>
+          <span id="latest-profit" class="value"></span> USDT
+        </div>
+        <div class="stat">
+          <span class="label">Account Size:</span>
+          <span id="latest-accountSize" class="value"></span> USDT
+        </div>
+      </div>
+
+      <div id="totals-section" class="section totals" style="display: none">
+        <h2>Overall Totals</h2>
+        <div class="stat">
+          <span class="label">Total Sales:</span>
+          <span id="total-sales" class="value"></span>
+        </div>
+        <div class="stat">
+          <span class="label">Total Bot Profit:</span>
+          <span id="total-botProfit" class="value"></span> USDT
+        </div>
+      </div>
+
+      <div
+        id="error-section"
+        class="section"
+        style="display: none; background-color: #fff5f5; border-color: #f8d7da"
+      >
+        <h2>Error</h2>
+        <div id="error-message" class="error"></div>
+      </div>
+
+      <div id="loading" class="loading">Loading...</div>
+    </div>
+
+    <script>
+      const API_URL = "/api/status";
+      const UPDATE_INTERVAL = 5000; // 5 seconds
+
+      function updateStatus() {
+        fetch(API_URL)
+          .then((response) => response.json())
+          .then((data) => {
+            document.getElementById("loading").style.display = "none";
+
+            if (data.error) {
+              document.getElementById("error-section").style.display = "block";
+              document.getElementById("error-message").textContent = data.error;
+              document.getElementById("latest-section").style.display = "none";
+              document.getElementById("totals-section").style.display = "none";
+              return;
+            }
+
+            // Update latest
+            if (data.latest) {
+              document.getElementById("latest-section").style.display = "block";
+              document.getElementById("latest-symbol").textContent =
+                data.latest.symbol;
+              document.getElementById("latest-bots").textContent =
+                data.latest.bots;
+              document.getElementById("latest-tradingBalance").textContent =
+                Number(data.latest.tradingBalance).toFixed(2);
+              document.getElementById("latest-profit").textContent = Number(
+                data.latest.profit
+              ).toFixed(2);
+              document.getElementById("latest-accountSize").textContent =
+                Number(data.latest.accountSize).toFixed(2);
+            } else {
+              document.getElementById("latest-section").style.display = "none";
+            }
+
+            // Update totals
+            document.getElementById("totals-section").style.display = "block";
+            document.getElementById("total-sales").textContent =
+              data.totals.totalSales;
+            document.getElementById("total-botProfit").textContent =
+              data.totals.totalBotProfit;
+
+            document.getElementById("error-section").style.display = "none";
+
+            // Update timestamp
+            document.getElementById(
+              "lastUpdate"
+            ).textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+          })
+          .catch((error) => {
+            console.error("Error fetching status:", error);
+            document.getElementById("loading").style.display = "none";
+            document.getElementById("error-section").style.display = "block";
+            document.getElementById("error-message").textContent =
+              "Failed to fetch status: " + error.message;
+            document.getElementById("latest-section").style.display = "none";
+            document.getElementById("totals-section").style.display = "none";
+          });
+      }
+
+      // Initial load
+      updateStatus();
+
+      // Set interval for updates
+      setInterval(updateStatus, UPDATE_INTERVAL);
+    </script>
+  </body>
+</html>
