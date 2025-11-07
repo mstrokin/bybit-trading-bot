@@ -14,11 +14,65 @@ const TGbot = new TelegramBot(token, { polling: false });
 const fs = require("node:fs");
 const USER_CHAT_ID = process.env.USER_CHAT_ID;
 
-const sendTGMessage = async (message) => {
+let rateLimitedUntil = 0;
+let messageQueue = [];
+
+const sendTGMessageInternal = async (message) => {
   try {
     return await TGbot.sendMessage(USER_CHAT_ID, message);
   } catch (error) {
-    console.log("error in sending message", message, error);
+    throw error; // Re-throw for handling in sendTGMessage
+  }
+};
+
+const processQueue = async () => {
+  while (messageQueue.length > 0 && Date.now() >= rateLimitedUntil) {
+    const msg = messageQueue.shift();
+    try {
+      await sendTGMessageInternal(msg);
+    } catch (error) {
+      if (error.response && error.response.statusCode === 429) {
+        const retryAfter =
+          parseInt(error.response.body.parameters?.retry_after) || 1;
+        rateLimitedUntil = Date.now() + retryAfter * 1000;
+        messageQueue.unshift(msg); // Put back to front
+        setTimeout(processQueue, retryAfter * 1000);
+        return;
+      } else {
+        console.log("error in sending queued message", msg, error);
+      }
+    }
+  }
+};
+
+const sendTGMessage = async (message) => {
+  if (Date.now() < rateLimitedUntil) {
+    console.log(
+      `Rate limited, queuing message: ${message.substring(0, 50)}...`
+    );
+    messageQueue.push(message);
+    return;
+  }
+
+  try {
+    await sendTGMessageInternal(message);
+  } catch (error) {
+    if (error.response && error.response.statusCode === 429) {
+      // Rate limit error
+      const retryAfter =
+        parseInt(error.response.body.parameters?.retry_after) || 1;
+      rateLimitedUntil = Date.now() + retryAfter * 1000;
+      console.log(
+        `Rate limited. Deferring messages until ${new Date(
+          rateLimitedUntil
+        ).toISOString()}`
+      );
+      messageQueue.push(message);
+      setTimeout(processQueue, retryAfter * 1000);
+    } else {
+      // Non-rate limit error, log and don't queue
+      console.log("Non-rate limit error, message not queued");
+    }
   }
 };
 
@@ -230,6 +284,12 @@ const RUNNING_INTERVAL = args["interval"] ? args["interval"] * 1000 : 10_000;
 
 const RE_INVEST_AMOUNT_USD_LOW = args["RA"] || 0.005;
 
+const SACRIFICE_PNL_THRESHOLD = -75;
+const NEAR_PROFIT_THRESHOLD = -5;
+
+const SACRIFICE_FILE = `${process.cwd()}/sacrifice_required.json`;
+const SACRIFICE_PERCENT = 0.5;
+
 const RE_INVEST_AMOUNT_USD_HIGH = 0.042;
 
 const RE_INVEST_TRESHOLD_PCT_LOW = -30;
@@ -374,19 +434,114 @@ const checkIfShouldReinvest = async (grid) => {
     await adjustMargin(RE_INVEST_AMOUNT_USD_LOW, botId);
   }*/
   if (gridProfitPercent < RE_INVEST_TRESHOLD_PCT_LOW) {
-    console.log(
-      `Reinvesting $${RE_INVEST_AMOUNT_USD_LOW} into ${botId} because too low percent: ${gridProfitPercent}% (Lower than ${RE_INVEST_TRESHOLD_PCT_LOW}%)`
-    );
-    await adjustMargin(RE_INVEST_AMOUNT_USD_LOW, botId);
+    const missing_percent = RE_INVEST_TRESHOLD_PCT_LOW - gridProfitPercent;
+    let factor;
+    if (missing_percent <= 5) {
+      factor = 1;
+    } else if (missing_percent <= 10) {
+      factor = 2 * missing_percent;
+    } else if (missing_percent <= 15) {
+      factor = 3 * missing_percent;
+    } else if (missing_percent <= 20) {
+      factor = 4 * missing_percent;
+    } else {
+      factor = 5 * missing_percent;
+    }
+    factor = Math.ceil(factor);
+    let reinvest_amount = RE_INVEST_AMOUNT_USD_LOW * factor;
+    if (Number(CURRENT_TRADING_BALANCE) < reinvest_amount) {
+      console.log(
+        `Not enough money for reinvesting $${reinvest_amount} into ${botId}, reinvesting full ${CURRENT_TRADING_BALANCE}!`
+      );
+      reinvest_amount = CURRENT_TRADING_BALANCE;
+    }
+    if (!reinvest_amount) return;
+    const reinvestMsg = `🔄 *Reinvesting into ${grid.grid_mode.replace(
+      "FUTURE_GRID_MODE_",
+      ""
+    )} bot ${botId} for ${SYMBOL}*\n\n📉 Current PnL: *${gridProfitPercent.toFixed(
+      2
+    )}%*\n🎯 Low Threshold: *${RE_INVEST_TRESHOLD_PCT_LOW}%*\n📊 Deficit: *${missing_percent.toFixed(
+      2
+    )}%*\n⚡ Scaling Factor: *${factor}x*\n💰 Amount: *$${reinvest_amount.toFixed(
+      4
+    )}*\n\nHelping the underperformer recover! 🚀`;
+    console.log(reinvestMsg);
+    sendTGMessage(reinvestMsg);
+    await adjustMargin(reinvest_amount, botId);
   } else if (gridProfitPercent > RE_INVEST_TRESHOLD_PCT_HIGH) {
+    if (Number(CURRENT_TRADING_BALANCE) < RE_INVEST_AMOUNT_USD_HIGH) {
+      console.log(
+        `Not enough money for reinvesting $${RE_INVEST_AMOUNT_USD_HIGH} into ${botId}!`
+      );
+      return;
+    }
     console.log(
-      `Reinvesting $${RE_INVEST_AMOUNT_USD_HIGH} into  into ${botId} because too high ${gridProfitPercent}%  (Higher than ${RE_INVEST_TRESHOLD_PCT_LOW}%)`
+      `Reinvesting $${RE_INVEST_AMOUNT_USD_HIGH} into ${botId} because too high ${gridProfitPercent}% (Higher than ${RE_INVEST_TRESHOLD_PCT_HIGH}%)`
     );
     await adjustMargin(RE_INVEST_AMOUNT_USD_HIGH, botId);
   } else {
     //console.log("Doing nothing");
   }
   return;
+};
+
+const createSacrificeFile = (targetBotId) => {
+  const data = { target_bot_id: targetBotId, timestamp: Date.now() };
+  fs.writeFileSync(SACRIFICE_FILE, JSON.stringify(data));
+  console.log(`Created sacrifice file for target bot ${targetBotId}`);
+};
+
+const readSacrificeFile = () => {
+  if (!fs.existsSync(SACRIFICE_FILE)) return null;
+  try {
+    const data = JSON.parse(fs.readFileSync(SACRIFICE_FILE, "utf8"));
+    if (Date.now() - data.timestamp > 600000) {
+      // 10 min expiry
+      fs.unlinkSync(SACRIFICE_FILE);
+      return null;
+    }
+    return data.target_bot_id;
+  } catch (error) {
+    console.error("Error reading sacrifice file:", error);
+    return null;
+  }
+};
+
+const deleteSacrificeFile = () => {
+  if (fs.existsSync(SACRIFICE_FILE)) {
+    fs.unlinkSync(SACRIFICE_FILE);
+    console.log("Deleted sacrifice file");
+  }
+};
+
+const performSacrifice = async (sacrificeGrid, targetBotId) => {
+  const sacrificeAmount =
+    Number(sacrificeGrid.total_investment) * SACRIFICE_PERCENT;
+  const closed = await closeGrid(sacrificeGrid.bot_id);
+  if (closed) {
+    CANCELLED_BOTS.set(sacrificeGrid.bot_id, +new Date());
+    console.log(
+      `Sacrificed best bot ${
+        sacrificeGrid.bot_id
+      }, reinvesting $${sacrificeAmount.toFixed(
+        4
+      )} into worst bot ${targetBotId}`
+    );
+    const sacrificeMsg = `⚡ *Sacrifice performed*\nSacrificed best bot ${
+      sacrificeGrid.bot_id
+    } (PnL: ${getNumberFromPct(sacrificeGrid.pnl_per).toFixed(
+      2
+    )}%)\nReinvesting *$${sacrificeAmount.toFixed(
+      4
+    )}* (50%) into worst bot ${targetBotId}\nSacrificing the strong to save the weak! 💪`;
+    sendTGMessage(sacrificeMsg);
+    await adjustMargin(sacrificeAmount, targetBotId);
+    // Don't recreate the sacrificed best bot to free up resources
+    deleteSacrificeFile();
+    return true;
+  }
+  return false;
 };
 const recreateGrid = async (grid) => {
   const new_min_price = Number(
@@ -422,9 +577,11 @@ const recreateGrid = async (grid) => {
     USDFuturesTradingBalance < new_investment &&
     USDFuturesTradingBalance - new_investment > INSUFFICIENT_FUNDS_LIMIT
   ) {
-    //new_investment = USDFuturesTradingBalance - 0.01;
+    if (USDFuturesTradingBalance < new_investment) {
+      new_investment = USDFuturesTradingBalance - 0.01;
+    }
   } else if (USDFuturesTradingBalance < new_investment) {
-    new_investment = new_investment;
+    new_investment = USDFuturesTradingBalance - 0.01;
   }
   console.log(msg);
   sendTGMessage(msg);
@@ -445,6 +602,26 @@ const closeAndRecreate = async (grid) => {
   if (closed) {
     CANCELLED_BOTS.set(grid.bot_id, +new Date());
     console.log(`Bot closed! Recreating after ${BOT_CREATION_DELAY}ms!`);
+
+    // Check total bots after closing
+    const assetsResult = await getAssets();
+    let currentTotal = 0;
+    if (
+      assetsResult?.ret_code === 0 &&
+      assetsResult.result?.status_code === 200
+    ) {
+      currentTotal = assetsResult.result.assets.length;
+    }
+    if (currentTotal > 40 && grid.total_investment < 1) {
+      console.log(
+        `Total bots after close >40 (${currentTotal}), skipping recreation for ${grid.bot_id}`
+      );
+      sendTGMessage(
+        `Skipped recreation of ${grid.bot_id} due to high bot count (>40) and small investment`
+      );
+      return;
+    }
+
     let tries = 0;
     while (true) {
       tries++;
@@ -796,6 +973,7 @@ const farm = async () => {
   let hasLowPnl = false;
   let worstPnl = 0;
   let worstBotId = "";
+  let worstGrid = null;
   let hasLong = false;
   let hasShort = false;
   for (let grid of grids) {
@@ -805,6 +983,7 @@ const farm = async () => {
       if (gridProfitPercent < worstPnl) {
         worstPnl = gridProfitPercent;
         worstBotId = grid.bot_id;
+        worstGrid = grid;
       }
     }
     if (grid.grid_mode === "FUTURE_GRID_MODE_LONG") {
@@ -822,6 +1001,38 @@ const farm = async () => {
       )}% on bot ${worstBotId} (threshold ${LOW_PNL_THRESHOLD}%)`;
       sendTGMessage(alertMsg);
       lastLowPnlAlert = now;
+    }
+  }
+
+  // Sacrifice logic
+  let goodBotId = null;
+  if (worstPnl < SACRIFICE_PNL_THRESHOLD && !readSacrificeFile()) {
+    // Find a good bot near profit
+    for (let grid of grids) {
+      const gridProfitPercent = getNumberFromPct(grid.pnl_per);
+      if (gridProfitPercent > NEAR_PROFIT_THRESHOLD) {
+        goodBotId = grid.bot_id;
+        break;
+      }
+    }
+    if (goodBotId) {
+      createSacrificeFile(goodBotId);
+      const sacrificeAlert = `🚨 *Sacrifice required* for ${SYMBOL}\nWorst bot ${worstBotId}: *${worstPnl.toFixed(
+        2
+      )}%* PnL\nSignaling system to sacrifice 1 low performer into good bot ${goodBotId} (> ${NEAR_PROFIT_THRESHOLD}%)`;
+      sendTGMessage(sacrificeAlert);
+    } else {
+      console.log(`No good bot found for sacrifice near ${SYMBOL}`);
+    }
+  }
+
+  // Check for sacrifice to perform
+  goodBotId = readSacrificeFile();
+  if (goodBotId && worstGrid && worstPnl < LOW_PNL_THRESHOLD) {
+    // Perform sacrifice on the worst grid
+    const sacrificed = await performSacrifice(worstGrid, goodBotId);
+    if (sacrificed) {
+      console.log(`Sacrifice completed for ${SYMBOL}`);
     }
   }
 
@@ -862,7 +1073,7 @@ const farm = async () => {
       ""
     )} direction due to low PnL`;
     console.log(rescueMsg);
-    if (TOTAL_CURRENT_GRIDBOT_NUMBER < 50) {
+    if (TOTAL_CURRENT_GRIDBOT_NUMBER <= 50 && grids.length < 5) {
       const created = await createMinimalBot(SYMBOL, oppositeMode, RESCUE_GAP);
       if (created) {
         sendTGMessage(`Rescue bot created successfully for ${SYMBOL}`);

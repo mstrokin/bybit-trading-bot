@@ -1,1 +1,1 @@
-node bybit_farm.js --symbol=DASHUSDT --interval=2 --TP=2 --TPF=2.5 --GP=0.5 --GG=0 --BALERT=20 --BSTOP=10 --RA=0.01
+node bybit_farm.js --symbol=DASHUSDT --interval=5 --TP=2 --TPF=2.5 --GP=0.5 --GG=0 --BALERT=20 --BSTOP=10 --RA=0.01
