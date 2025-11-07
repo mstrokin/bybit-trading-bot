@@ -741,6 +741,27 @@ const sortGrids = (gridA, gridB) => {
 };
 let last_sales = 0;
 const farm = async () => {
+  let TOTAL_CURRENT_GRIDBOT_NUMBER = 0;
+  let position_size = 0;
+  const assetsResult = await getAssets();
+  if (
+    assetsResult?.ret_code === 0 &&
+    assetsResult.result?.status_code === 200
+  ) {
+    const bots = assetsResult.result.assets;
+    TOTAL_CURRENT_GRIDBOT_NUMBER = bots.length;
+    const symbolBots = bots.filter((bot) => {
+      return bot.symbol == SYMBOL;
+    });
+    symbolBots.map((bot) => {
+      position_size += Number(Number.parseFloat(bot.current_position));
+    });
+  } else {
+    console.error(
+      "ERROR fetching assets for position size:",
+      JSON.stringify(assetsResult)
+    );
+  }
   const gridsResult = await getListOfGrids();
   if (gridsResult.ret_code !== 0) {
     console.error("ERROR:", JSON.stringify(gridsResult));
@@ -841,7 +862,7 @@ const farm = async () => {
       ""
     )} direction due to low PnL`;
     console.log(rescueMsg);
-    if (grids.length < 50) {
+    if (TOTAL_CURRENT_GRIDBOT_NUMBER < 50) {
       const created = await createMinimalBot(SYMBOL, oppositeMode, RESCUE_GAP);
       if (created) {
         sendTGMessage(`Rescue bot created successfully for ${SYMBOL}`);
@@ -877,27 +898,6 @@ const farm = async () => {
   }
   TOTAL_GRID_PROFIT = TOTAL_GRID_PROFIT.toFixed(2);
 
-  // Fetch assets once for both position size and zero position check
-  const assetsResult = await getAssets();
-  let position_size = 0;
-  if (
-    assetsResult?.ret_code === 0 &&
-    assetsResult.result?.status_code === 200
-  ) {
-    const bots = assetsResult.result.assets;
-    bots
-      .filter((bot) => {
-        return bot.symbol == SYMBOL;
-      })
-      .map((bot) => {
-        position_size += Number(Number.parseFloat(bot.current_position));
-      });
-  } else {
-    console.error(
-      "ERROR fetching assets for position size:",
-      JSON.stringify(assetsResult)
-    );
-  }
   await checkAssets(sales || 0, green, position_size);
 
   // Check and shift grids with zero position
@@ -909,8 +909,14 @@ const farm = async () => {
     const symbolAssets = assets.filter((a) => a.symbol === SYMBOL);
     for (let grid of grids) {
       const asset = symbolAssets.find((a) => a.bot_id === grid.bot_id);
-      if (asset && Number(asset.current_position) === 0) {
-        const zeroMsg = `Zero position detected for ${grid.bot_id}, preparing to shift`;
+      const ageMs =
+        Math.ceil(new Date().getTime() / 1000) -
+        Number.parseInt(grid.create_time);
+      if (asset && Number(asset.current_position) === 0 && ageMs > 1800) {
+        // 30 minutes in seconds
+        const zeroMsg = `Zero position detected for ${grid.bot_id} (age: ${
+          ageMs / 60
+        } min), preparing to shift`;
         console.log(zeroMsg);
         sendTGMessage(zeroMsg);
         const currentPrice = await getCurrentPrice(SYMBOL);
@@ -936,7 +942,9 @@ const farm = async () => {
           initial_investment + Number(investment_increase)
         ).toFixed(4);
         const USDFuturesTradingBalance = await getUSDFuturesBalance();
-        let shiftMsg = `Shifting ${SYMBOL} grid ${grid.bot_id} due to zero position. `;
+        let shiftMsg = `Shifting ${SYMBOL} grid ${
+          grid.bot_id
+        } due to zero position (age: ${Math.floor(ageMs / 60)} min). `;
         shiftMsg += `Old range: ${oldMin.toFixed(4)}-${oldMax.toFixed(
           4
         )}, new range: ${newMin}-${newMax} (current: ${currentPrice.toFixed(
