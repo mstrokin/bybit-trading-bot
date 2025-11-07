@@ -204,7 +204,7 @@ const createGrid = async (
     console.log("CREATED?", futuresGrid?.result);
     return true;
   } catch (error) {
-    sendTGMessage("ERROR: failed to create grid");
+    sendTGMessage("ERROR: failed to create grid:" + error.toString());
   }
 };
 
@@ -339,6 +339,7 @@ let lastRescueTime = 0;
 
 let CURRENT_TRADING_BALANCE = 0;
 let CURRENT_POSITION_SIZE = 0;
+let CURRENT_PROFIT = 0;
 
 let ACCOUNT_SIZE = 0;
 const sleep = (ms) => {
@@ -468,7 +469,11 @@ const checkIfShouldReinvest = async (grid) => {
       2
     )}%*\n⚡ Scaling Factor: *${factor}x*\n💰 Amount: *$${reinvest_amount.toFixed(
       4
-    )}*\n\nHelping the underperformer recover! 🚀`;
+    )}*\n💳 Available: *$${Number(CURRENT_TRADING_BALANCE).toFixed(
+      4
+    )}*\n💸 Remaining: *$${(
+      Number(CURRENT_TRADING_BALANCE) - reinvest_amount
+    ).toFixed(4)}*`;
     console.log(reinvestMsg);
     sendTGMessage(reinvestMsg);
     await adjustMargin(reinvest_amount, botId);
@@ -791,7 +796,11 @@ const checkIfShouldClose = async (grid) => {
     `WARNING: Taking ${SYMBOL} profit for ${grid.grid_mode} bot ${grid.bot_id} (${grid.min_price} - ${grid.max_price})! ${salesText}, profit: $${grid.total_profit}, APR: ${APR}`
   );
   //let msg = `Taking ${SYMBOL} profit - ${grid.grid_mode} (${grid.min_price} - ${grid.max_price}), sales made: ${grid.arbitrage_num}, profit: $${grid.total_profit}, APR: ${APR}!`;
-  let msg = `Taking ${SYMBOL} profit: $${grid.total_profit}, APR: ${APR}%`;
+  let msg = `Taking ${SYMBOL} profit: $${
+    grid.total_profit
+  }, APR: ${APR}%, Current balance: $${Number(CURRENT_TRADING_BALANCE).toFixed(
+    2
+  )} USDT`;
   sendTGMessage(msg);
   closeAndRecreate(grid);
 };
@@ -831,6 +840,7 @@ const toFourDecimals = (val) => {
 };
 const checkAssets = async (sales = 0, green, position_size = null) => {
   const USDBalance = await getUSDBalance();
+  CURRENT_PROFIT = USDBalance.profit_in_usd;
   if (!USDBalance) {
     await sendTGMessage("ERROR: Balance is 0; something is wrong?");
     throw new Error("ERROR: Balance is 0, check cookie");
@@ -852,7 +862,8 @@ const checkAssets = async (sales = 0, green, position_size = null) => {
     Number(USDBalance.balance_in_usd) +
       Math.abs(Number(USDBalance.profit_in_usd))
   );
-  CURRENT_TRADING_BALANCE = USDFuturesTradingBalance;
+  CURRENT_TRADING_BALANCE = Number(USDFuturesTradingBalance);
+  //console.log("updated trading balance", USDFuturesTradingBalance);
   var table = new Table({
     head: [
       "Time",
@@ -1069,37 +1080,50 @@ const farm = async () => {
       oppositeMode = "FUTURE_GRID_MODE_LONG";
     }
   }
+
+  let salesChanged = sales > 0 && last_sales !== sales;
+  let green = salesChanged;
+
+  await checkAssets(sales || 0, green, position_size);
+
   if (oppositeMode && Date.now() - lastRescueTime > 5 * 60 * 1000) {
     // 5 minutes throttle
-    const rescueMsg = `Attempting rescue bot for ${SYMBOL} in ${oppositeMode.replace(
-      "FUTURE_GRID_MODE_",
-      ""
-    )} direction due to low PnL`;
-    console.log(rescueMsg);
-    if (TOTAL_CURRENT_GRIDBOT_NUMBER <= 50 && grids.length < 5) {
-      const created = await createMinimalBot(SYMBOL, oppositeMode, RESCUE_GAP);
-      if (created) {
-        sendTGMessage(`Rescue bot created successfully for ${SYMBOL}`);
-        lastRescueTime = Date.now();
-      } else {
-        //sendTGMessage(`Failed to create rescue bot for ${SYMBOL}`);
-      }
+    if (CURRENT_TRADING_BALANCE < 0.01) {
+      console.log(
+        `Insufficient trading balance for rescue bot: $${CURRENT_TRADING_BALANCE.toFixed(
+          4
+        )} USDT`
+      );
     } else {
-      const skipMsg = `Max bots (50) reached, skipping rescue for ${SYMBOL}`;
-      console.log(skipMsg);
-      //sendTGMessage(skipMsg);
+      const rescueMsg = `Attempting rescue bot for ${SYMBOL} in ${oppositeMode.replace(
+        "FUTURE_GRID_MODE_",
+        ""
+      )} direction due to low PnL`;
+      console.log(rescueMsg);
+      if (TOTAL_CURRENT_GRIDBOT_NUMBER <= 50 && grids.length < 5) {
+        const created = await createMinimalBot(
+          SYMBOL,
+          oppositeMode,
+          RESCUE_GAP
+        );
+        if (created) {
+          sendTGMessage(`Rescue bot created successfully for ${SYMBOL}`);
+          lastRescueTime = Date.now();
+        } else {
+          //sendTGMessage(`Failed to create rescue bot for ${SYMBOL}`);
+        }
+      } else {
+        const skipMsg = `Max bots (50) reached, skipping rescue for ${SYMBOL}`;
+        console.log(skipMsg);
+        //sendTGMessage(skipMsg);
+      }
     }
   }
 
-  let green = false;
-  if (sales > 0 && last_sales !== sales) {
-    green = true;
-    /*
-    let msgtosend = `New ${SYMBOL} sales = ${sales}, Balance = ${CURRENT_TRADING_BALANCE}, Account Size = ${ACCOUNT_SIZE}, Long = ${toFourDecimals(
-      long_balance
-    )}, Short = ${toFourDecimals(short_balance)}`;
-    */
-    let msgtosend = `New ${SYMBOL} sales = ${sales}`;
+  if (salesChanged) {
+    let msgtosend = `New ${SYMBOL} sales = ${sales}, Trading balance: $${Number(
+      CURRENT_TRADING_BALANCE
+    ).toFixed(2)} USDT, Profit: $${Number(CURRENT_PROFIT).toFixed(2)} USDT`;
 
     sendTGMessage(msgtosend);
     last_sales = sales;
@@ -1111,8 +1135,6 @@ const farm = async () => {
     );
   }
   TOTAL_GRID_PROFIT = TOTAL_GRID_PROFIT.toFixed(2);
-
-  await checkAssets(sales || 0, green, position_size);
 
   // Check and shift grids with zero position
   if (
@@ -1260,7 +1282,6 @@ const main = async () => {
       USDBalance.profit_in_usd
     }, Params: ${JSON.stringify(args)}`
   );
-  //checkAssets();
   console.log(
     `Starting Farm bot, Balance: $${USDBalance.balance_in_usd} Profit:$${USDBalance.profit_in_usd}`
   );

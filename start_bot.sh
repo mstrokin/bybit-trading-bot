@@ -1,0 +1,1 @@
+node tg-trading-bot.js
