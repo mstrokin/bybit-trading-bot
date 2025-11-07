@@ -7,3 +7,4 @@ BYBIT_COOKIE
 *.sqlite3
 *.zip
 .env
+*_farm_cache.json

@@ -166,7 +166,7 @@ const createGrid = async (
   grid_type
 ) => {
   const raw = JSON.stringify({
-    total_investment: String(amount),
+    total_investment: String(Number(amount).toFixed(4)),
     init_bonus: "0",
     source: 2,
     symbol,
@@ -190,18 +190,21 @@ const createGrid = async (
       requestOptions
     );
     const futuresGrid = await futuresGridRes.json();
-    if (futuresGrid.result.check_code === 400006) {
+    if (futuresGrid.result?.check_code === 400006) {
       console.error("ERROR: No money in the account");
       sendTGMessage(
         "ERROR: Not enough money in the account to create a bot!!!"
       );
       return false;
-    } else if (result.bot_id == "0") {
-      console.log("result= ", result);
-      sendTGMessage("ERROR: Failed to create a bot (hz why)!!!");
+    } else if (futuresGrid.result?.bot_id == "0") {
+      console.log("result= ", futuresGrid);
+      sendTGMessage("ERROR: Failed to create a bot!!!");
       return false;
     }
     console.log("CREATED?", futuresGrid?.result);
+    if (!futuresGrid) {
+      return;
+    }
     return true;
   } catch (error) {
     sendTGMessage("ERROR: failed to create grid:" + error.toString());
@@ -1249,6 +1252,19 @@ const farm = async () => {
     `TOTAL_GRID_PROFIT = $${Number(TOTAL_GRID_PROFIT).toFixed(2).trim()}`
   );
   console.log("----------------");
+
+  // Update cache file for telegram bot
+  const cacheData = {
+    timestamp: Date.now(),
+    symbol: SYMBOL,
+    bots: TOTAL_CURRENT_GRIDBOT_NUMBER,
+    tradingBalance: CURRENT_TRADING_BALANCE,
+    profit: CURRENT_PROFIT,
+    accountSize: ACCOUNT_SIZE,
+    totalProfit: TOTAL_GRID_PROFIT,
+    sales: sales
+  };
+  fs.writeFileSync(`${SYMBOL}_farm_cache.json`, JSON.stringify(cacheData, null, 2));
 };
 
 const runBot = async () => {

@@ -1,6 +1,7 @@
 require("dotenv").config();
 const config = require("./config");
 const TelegramBot = require("node-telegram-bot-api");
+const fs = require("fs");
 const {
   getTicker,
   validateGrid,
@@ -27,16 +28,19 @@ bot.onText(/\/start/, (msg) => {
     return;
   }
 
-  const keyboard = config.symbols.map((symbol) => [
-    { text: symbol, callback_data: `symbol:${symbol}` },
-  ]);
+  const keyboard = [
+    ...config.symbols.map((symbol) => [
+      { text: symbol, callback_data: `symbol:${symbol}` },
+    ]),
+    [{ text: "Status", callback_data: "status" }],
+  ];
   const opts = {
     reply_markup: {
       inline_keyboard: keyboard,
     },
   };
 
-  bot.sendMessage(chatId, "Select a currency:", opts);
+  bot.sendMessage(chatId, "Select a currency or check status:", opts);
 });
 
 bot.on("callback_query", async (query) => {
@@ -48,6 +52,68 @@ bot.on("callback_query", async (query) => {
 
   const data = query.data;
   bot.answerCallbackQuery(query.id);
+
+  if (data === "status") {
+    try {
+      const files = fs
+        .readdirSync(".")
+        .filter((file) => file.endsWith("_farm_cache.json"));
+      let statusMsg = "Farm Status (Latest Update):\n\n";
+      let totalSales = 0;
+      let totalBotProfit = 0;
+      if (files.length === 0) {
+        statusMsg += "No active farm caches found.";
+      } else {
+        // Find the newest file
+        let newestFile = null;
+        let maxTimestamp = 0;
+        files.forEach((file) => {
+          const cacheData = JSON.parse(fs.readFileSync(file, "utf8"));
+          if (cacheData.timestamp > maxTimestamp) {
+            maxTimestamp = cacheData.timestamp;
+            newestFile = file;
+          }
+        });
+        if (newestFile) {
+          const latestData = JSON.parse(fs.readFileSync(newestFile, "utf8"));
+          const {
+            symbol,
+            bots,
+            tradingBalance,
+            profit,
+            accountSize,
+            totalProfit,
+            sales,
+          } = latestData;
+          statusMsg +=
+            `*Latest: ${symbol}*\n` +
+            `Running Bots: ${bots}\n` +
+            `Trading Balance: $${tradingBalance.toFixed(2)} USDT\n` +
+            `Profit: $${profit.toFixed(2)} USDT\n` +
+            `Account Size: $${accountSize} USDT\n\n`;
+          // Aggregate totals from all
+          files.forEach((file) => {
+            const cacheData = JSON.parse(fs.readFileSync(file, "utf8"));
+            totalSales += cacheData.sales || 0;
+            totalBotProfit += parseFloat(cacheData.totalProfit || 0);
+          });
+          statusMsg +=
+            `*Overall Totals:*\n` +
+            `Total Sales: ${totalSales}\n` +
+            `Total Bot Profit: $${totalBotProfit.toFixed(2)}`;
+        } else {
+          statusMsg += "No valid cache files found.";
+        }
+      }
+      bot.sendMessage(chatId, statusMsg, { parse_mode: "Markdown" });
+    } catch (error) {
+      bot.sendMessage(
+        chatId,
+        "Error reading farm status. No cache files found or invalid."
+      );
+    }
+    return;
+  }
 
   if (data.startsWith("symbol:")) {
     const symbol = data.split(":")[1];
