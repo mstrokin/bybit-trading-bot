@@ -46,6 +46,9 @@ const processQueue = async () => {
 };
 
 const sendTGMessage = async (message) => {
+  const logEntry = `${new Date().toISOString()} - ${message}\n`;
+  fs.appendFileSync(`${process.cwd()}/tg_messages.log`, logEntry);
+
   if (Date.now() < rateLimitedUntil) {
     console.log(
       `Rate limited, queuing message: ${message.substring(0, 50)}...`
@@ -284,7 +287,7 @@ const RUNNING_INTERVAL = args["interval"] ? args["interval"] * 1000 : 10_000;
 
 const RE_INVEST_AMOUNT_USD_LOW = args["RA"] || 0.005;
 
-const SACRIFICE_PNL_THRESHOLD = -75;
+const SACRIFICE_PNL_THRESHOLD = -77.77;
 const NEAR_PROFIT_THRESHOLD = -5;
 
 const SACRIFICE_FILE = `${process.cwd()}/sacrifice_required.json`;
@@ -292,7 +295,7 @@ const SACRIFICE_PERCENT = 0.5;
 
 const RE_INVEST_AMOUNT_USD_HIGH = 0.042;
 
-const RE_INVEST_TRESHOLD_PCT_LOW = -30;
+const RE_INVEST_TRESHOLD_PCT_LOW = -42;
 
 const RE_INVEST_APR_LOW = -7000;
 
@@ -324,9 +327,9 @@ const CANCELLED_BOTS = new Map();
 
 const MAX_RETRIES = 3;
 
-const LOW_PNL_THRESHOLD = -10;
+const LOW_PNL_THRESHOLD = -24;
 
-const RESCUE_PNL_THRESHOLD = -25;
+const RESCUE_PNL_THRESHOLD = -36;
 
 const RESCUE_GAP = 0.015; // 1%
 
