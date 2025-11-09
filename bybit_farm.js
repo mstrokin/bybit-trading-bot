@@ -7,7 +7,11 @@ const { pms } = require("@wilcosp/ms-prettify");
 
 const clearConsole = require("console-clear");
 
-const { createMinimalBot } = require("./lib/bybit-utils");
+const {
+  createMinimalBot,
+  getWithdrawDetail,
+  withdrawProfit,
+} = require("./lib/bybit-utils");
 
 const token = process.env.TOKEN;
 const TGbot = new TelegramBot(token, { polling: false });
@@ -333,6 +337,8 @@ const MAX_RETRIES = 3;
 const LOW_PNL_THRESHOLD = -24;
 
 const RESCUE_PNL_THRESHOLD = -36;
+
+const WITHDRAW_THRESHOLD = 1.0;
 
 const RESCUE_GAP = 0.015; // 1%
 
@@ -985,6 +991,25 @@ const farm = async () => {
     await checkIfShouldReinvest(grid);
   }
   //console.error("REINVEST COMPLETE");
+  console.log("checking profits");
+  for (let grid of grids) {
+    const gridProfitPercent = getNumberFromPct(grid.pnl_per);
+    // Only for profitable bots
+    const detail = await getWithdrawDetail(grid.bot_id);
+    console.log("detail = ", detail);
+    if (detail && Number(detail.withdraw_limit) > WITHDRAW_THRESHOLD) {
+      const amount = Number(detail.withdraw_limit).toFixed(4);
+      const msg = `Withdrawing $${amount} from bot ${grid.bot_id}`;
+      const success = await withdrawProfit(
+        grid.bot_id,
+        Number(amount * 0.8).toFixed(4)
+      );
+      if (success) {
+        sendTGMessage(msg);
+      }
+      await sleep(1000); // Rate limit
+    }
+  }
 
   // Check for low PnL and send throttled alert
   let hasLowPnl = false;
@@ -1262,9 +1287,12 @@ const farm = async () => {
     profit: CURRENT_PROFIT,
     accountSize: ACCOUNT_SIZE,
     totalProfit: TOTAL_GRID_PROFIT,
-    sales: sales
+    sales: sales,
   };
-  fs.writeFileSync(`${SYMBOL}_farm_cache.json`, JSON.stringify(cacheData, null, 2));
+  fs.writeFileSync(
+    `${SYMBOL}_farm_cache.json`,
+    JSON.stringify(cacheData, null, 2)
+  );
 };
 
 const runBot = async () => {

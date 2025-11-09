@@ -30,6 +30,9 @@
       .totals {
         background-color: #f0f8ff;
       }
+      .actions {
+        background-color: #fff3cd;
+      }
       h2 {
         color: #333;
       }
@@ -52,6 +55,27 @@
       }
       .error {
         color: #dc3545;
+      }
+      .symbol-div {
+        margin-bottom: 10px;
+      }
+      button {
+        margin-right: 5px;
+        padding: 5px 10px;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        color: white;
+      }
+      .pump-btn {
+        background-color: #28a745;
+      }
+      .dump-btn {
+        background-color: #dc3545;
+      }
+      #action-status {
+        margin-top: 10px;
+        font-weight: bold;
       }
     </style>
   </head>
@@ -96,6 +120,12 @@
         </div>
       </div>
 
+      <div id="actions-section" class="section actions" style="display: none">
+        <h2>Actions</h2>
+        <div id="symbols-list"></div>
+        <div id="action-status"></div>
+      </div>
+
       <div
         id="error-section"
         class="section"
@@ -110,7 +140,58 @@
 
     <script>
       const API_URL = "/api/status";
-      const UPDATE_INTERVAL = 5000; // 5 seconds
+      const SYMBOLS_API = "/api/symbols";
+      const ACTION_API = "/api/action";
+      const UPDATE_INTERVAL = 2000; // 2 seconds
+
+      async function loadSymbols() {
+        try {
+          const response = await fetch(SYMBOLS_API);
+          const symbols = await response.json();
+          const symbolsList = document.getElementById("symbols-list");
+          symbolsList.innerHTML = "";
+          symbols.forEach((symbol) => {
+            const symbolDiv = document.createElement("div");
+            symbolDiv.className = "symbol-div";
+            symbolDiv.innerHTML = `
+                        <span class="label">${symbol}:</span>
+                        <button class="pump-btn" onclick="performAction('pump', '${symbol}')">Pump It</button>
+                        <button class="dump-btn" onclick="performAction('dump', '${symbol}')">Dump It</button>
+                    `;
+            symbolsList.appendChild(symbolDiv);
+          });
+          document.getElementById("actions-section").style.display = "block";
+        } catch (error) {
+          console.error("Error loading symbols:", error);
+        }
+      }
+
+      async function performAction(action, symbol) {
+        const statusEl = document.getElementById("action-status");
+        statusEl.textContent = `Performing ${action} for ${symbol}...`;
+        statusEl.style.color = "#007bff";
+
+        try {
+          const response = await fetch(ACTION_API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action, symbol }),
+          });
+          const result = await response.json();
+
+          if (result.success) {
+            statusEl.textContent = result.message;
+            statusEl.style.color = "#28a745";
+            updateStatus();
+          } else {
+            statusEl.textContent = result.error || "Action failed.";
+            statusEl.style.color = "#dc3545";
+          }
+        } catch (error) {
+          statusEl.textContent = "Error performing action: " + error.message;
+          statusEl.style.color = "#dc3545";
+        }
+      }
 
       function updateStatus() {
         fetch(API_URL)
@@ -170,6 +251,7 @@
       }
 
       // Initial load
+      loadSymbols();
       updateStatus();
 
       // Set interval for updates
