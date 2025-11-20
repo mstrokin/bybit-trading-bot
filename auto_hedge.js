@@ -225,7 +225,7 @@ const main = async () => {
       3, // Start high to get max
       leverage
     );
-    console.log("Initial validate = ", validation);
+    //console.log("Initial validate = ", validation);
 
     if (!validation) {
       console.log(

@@ -25,7 +25,7 @@ const getHeaders = () => {
   return myHeaders;
 };
 
-const BOTS_PER_PAGE = 150;
+const BOTS_PER_PAGE = 50;
 
 const getBots = async (page) => {
   const raw = JSON.stringify({
