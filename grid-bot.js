@@ -17,7 +17,7 @@ const sendTGMessage = async (message) => {
   try {
     return await TGbot.sendMessage(USER_CHAT_ID, message);
   } catch (error) {
-    console.log("error in sending message", message, error);
+    console.log("error in sending message", message);
   }
 };
 

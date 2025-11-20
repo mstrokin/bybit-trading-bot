@@ -1,3 +1,20 @@
+# 🚨 **CRITICAL WARNING: TRADING RISKS AHEAD!** 🚨
+
+⚠️ **Funds are inherently at risk when using this software!** ⚠️
+
+This tool interacts with Bybit's grid trading bots, which involve **high-risk activities** such as leveraged futures trading. Key risks include:
+
+- **Slippage**: Orders may execute at worse prices than expected, especially in volatile markets, leading to unexpected losses.
+- **Market Volatility**: Crypto prices can swing wildly, causing grid bots to hit liquidation prices or accumulate heavy losses.
+- **Leverage Risks**: Using leverage (e.g., 10x+) amplifies both gains and losses – you could lose your entire investment quickly.
+- **Platform & API Risks**: Bybit may change APIs, impose limits, or experience downtime; cookie-based auth can expire or fail.
+- **No Guarantees**: This is experimental code – bugs, misconfigurations, or poor strategy could wipe out your balance.
+- **Regulatory & Legal**: Trading derivatives may be restricted in your jurisdiction; this is **NOT financial advice**. Consult professionals.
+
+**💰 Only use money you can afford to lose! Start small, test in dry-run modes, and monitor closely. The author is not liable for any losses. Proceed at your own risk! 💀**
+
+---
+
 # Donation address
 
 BTC only: bc1qlwz7qu5f4xrg2gwzxjh934rvrufrldnjzpegap

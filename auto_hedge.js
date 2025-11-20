@@ -173,7 +173,7 @@ const main = async () => {
     );
   });
 
-  const hedge_shift = 0.02; // 2% shift
+  const hedge_shift = 0.01; // 1% shift
   const grid_type = "FUTURE_GRID_TYPE_GEOMETRIC";
 
   for (let item of nonHedgedSymbols) {
