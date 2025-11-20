@@ -93,3 +93,15 @@ This script identifies non-hedged symbols (Long/Short imbalance outside 40-60%) 
   - Asks y/n for each symbol.
 
 Run with: `node auto_hedge.js`
+
+## kill_dust.js
+
+This script identifies and closes "dust" grid bots (total investment < $0.50) that have PnL > -10% (losses less than 10%). It filters active grids, logs each bot's details (symbol, bot_id, investment, PnL %), and performs closures with delays to avoid rate limits. Includes Telegram notifications for start, results, and errors.
+
+- **Highlights**:
+  - Filters: Investment < $0.50 AND PnL > -10%.
+  - Dry-run mode: Simulates closures without executing (use `--dry-run` flag).
+  - Displays PnL % for each targeted bot in console and messages.
+  - Closes in a loop with 2-second delays.
+
+Run with: `node kill_dust.js` (or `node kill_dust.js --dry-run` for simulation).

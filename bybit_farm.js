@@ -622,6 +622,20 @@ const closeAndRecreate = async (grid) => {
     ) {
       currentTotal = assetsResult.result.assets.length;
     }
+    if (Number(grid.total_investment) < 0.5) {
+      console.log(
+        `Skipping recreation for dust bot ${grid.bot_id} (investment: $${Number(
+          grid.total_investment
+        ).toFixed(4)})`
+      );
+      sendTGMessage(
+        `Skipped recreation of dust bot ${grid.bot_id} (investment: $${Number(
+          grid.total_investment
+        ).toFixed(4)})`
+      );
+      return;
+    }
+
     if (currentTotal > 40 && grid.total_investment < 1) {
       console.log(
         `Total bots after close >40 (${currentTotal}), skipping recreation for ${grid.bot_id}`

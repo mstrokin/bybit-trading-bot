@@ -152,6 +152,9 @@ const main = async () => {
       });
     }
   });
+  nonHedgedSymbols.sort(
+    (a, b) => parseFloat(b.longPct) - parseFloat(a.longPct)
+  );
 
   if (nonHedgedSymbols.length === 0) {
     console.log(clc.green("All positions are properly hedged!"));
