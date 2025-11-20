@@ -57,3 +57,39 @@ BALERT -- when to start alerting about the low balance (in $)
 BSTOP -- when to stop all bots (in $)
 RA -- reinvestment amount
 ```
+
+# Dashboard and Hedging Tools
+
+## bybit_dashboard.js
+
+This script displays all existing grids in a CLI table format, sorted by symbol. It includes columns for Bot ID, Symbol, Mode, Leverage, Cells, Total Inv., Initial Inv., Min Price, Max Price, Sales, and PnL %.
+
+- **Highlights**:
+
+  - PnL < -10% in red.
+  - Unhedged symbols (outside 40-60% Long/Short balance) in yellow.
+  - Dust positions (investments < $0.50) in cyan.
+
+- **Additional Info**:
+  - Global Long/Short ratio (total investments).
+  - Per-symbol Long/Short ratios in a separate table, with unhedged highlighted in yellow.
+
+Run with: `node bybit_dashboard.js`
+
+## auto_hedge.js
+
+This script identifies non-hedged symbols (Long/Short imbalance outside 40-60%) and prompts to create a hedging grid in the minority direction.
+
+- **Logic**:
+
+  - Averages investment, leverage, and range from majority-side grids.
+  - Fetches current price and uses symbol-specific decimals.
+  - Shifts the range center by 2% around current price in the minority direction (up for Long, down for Short), maintaining the same relative width.
+  - Validates parameters up to 3 times to stabilize cell_number (max possible).
+  - Ensures amount meets minimum investment.
+
+- **Prompt**:
+  - Shows current price, proposed amount, range, leverage, and cells.
+  - Asks y/n for each symbol.
+
+Run with: `node auto_hedge.js`

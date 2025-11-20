@@ -1,1 +1,1 @@
-node bybit_farm.js --symbol=TONUSDT --interval=2 --TP=3.3 --TPF=2.5 --GP=1 --GG=2 --BALERT=20 --BSTOP=10 --RA=0.1
+node bybit_farm.js --symbol=TONUSDT --interval=5 --TP=3.3 --TPF=2.5 --GP=1 --GG=2 --BALERT=20 --BSTOP=10 --RA=0.1
