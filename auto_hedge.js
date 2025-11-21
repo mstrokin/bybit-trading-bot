@@ -2,8 +2,25 @@ require("dotenv").config();
 const fs = require("node:fs");
 const readline = require("readline");
 var clc = require("cli-color");
-const { validateGrid, createGrid, getTicker } = require("./lib/bybit-utils");
+const {
+  validateGrid,
+  createGrid,
+  getTicker,
+  getUSDFuturesBalance,
+} = require("./lib/bybit-utils");
 
+const args = process.argv.slice(2);
+const autoMode = args.includes("--auto");
+
+let partialMin = null;
+const partialIndex = args.indexOf("--partial");
+if (partialIndex !== -1 && partialIndex + 1 < args.length) {
+  partialMin = parseFloat(args[partialIndex + 1]);
+  if (isNaN(partialMin) || partialMin < 0) {
+    console.log(clc.red("Invalid --partial value, must be positive number."));
+    process.exit(1);
+  }
+}
 const path = process.cwd();
 const BYBIT_COOKIE = fs.readFileSync(`${path}/BYBIT_COOKIE`);
 
@@ -79,6 +96,13 @@ const main = async () => {
     return;
   }
   const grids = gridsResult.result.grids;
+  const balance = await getUSDFuturesBalance();
+  if (!balance || Number(balance) <= 0) {
+    console.log(clc.red("No available balance for hedging."));
+    rl.close();
+    return;
+  }
+  console.log(`Available balance: $${balance}`);
   if (!grids || !grids.length) {
     console.log("No grids found");
     rl.close();
@@ -109,7 +133,7 @@ const main = async () => {
     }
   });
 
-  const nonHedgedSymbols = [];
+  let nonHedgedSymbols = [];
   Object.keys(symbolGroups).forEach((symbol) => {
     const { long, short, totalInvestment, longGrids, shortGrids } =
       symbolGroups[symbol];
@@ -156,34 +180,111 @@ const main = async () => {
     (a, b) => parseFloat(b.longPct) - parseFloat(a.longPct)
   );
 
-  if (nonHedgedSymbols.length === 0) {
-    console.log(clc.green("All positions are properly hedged!"));
+  console.log(
+    clc.yellow(`Possible non-hedged symbols (available balance: $${balance}):`)
+  );
+  nonHedgedSymbols.forEach((item, index) => {
+    const required = Number(item.avgInvestment);
+    const feasibleFull = required <= Number(balance);
+    let status;
+    if (feasibleFull) {
+      status = "(feasible)";
+    } else if (partialMin !== null && Number(balance) >= partialMin) {
+      status = "(partial feasible)";
+    } else {
+      status = "(insufficient balance)";
+    }
+    console.log(
+      `${index + 1}. ${item.symbol}: ${item.longPct}% long (majority ${
+        item.majoritySide
+      }, suggest ${item.minoritySide} hedge, est. required: $${required.toFixed(
+        4
+      )}) ${status}`
+    );
+  });
+
+  let processableSymbols;
+  if (partialMin === null) {
+    processableSymbols = nonHedgedSymbols.filter(
+      (item) => Number(item.avgInvestment) <= Number(balance)
+    );
+  } else {
+    processableSymbols = nonHedgedSymbols.filter(
+      (item) =>
+        Number(item.avgInvestment) <= Number(balance) ||
+        Number(balance) >= partialMin
+    );
+  }
+  if (processableSymbols.length === 0) {
+    console.log(clc.red("No feasible hedges based on available balance."));
     rl.close();
     return;
   }
 
-  console.log(
-    clc.yellow(`Found ${nonHedgedSymbols.length} non-hedged symbols:`)
-  );
-  nonHedgedSymbols.forEach((item, index) => {
-    console.log(
-      `${index + 1}. ${item.symbol}: ${item.longPct}% long (majority ${
-        item.majoritySide
-      }, suggest adding ${item.minoritySide} hedge)`
-    );
-  });
-
   const hedge_shift = 0.01; // 1% shift
   const grid_type = "FUTURE_GRID_TYPE_GEOMETRIC";
 
-  for (let item of nonHedgedSymbols) {
+  if (autoMode) {
+    let global_long = 0;
+    let global_short = 0;
+    for (let symbol in symbolGroups) {
+      global_long += symbolGroups[symbol].long;
+      global_short += symbolGroups[symbol].short;
+    }
+    const total_global = global_long + global_short;
+    if (total_global === 0) {
+      console.log("No positions, nothing to hedge.");
+      rl.close();
+      return;
+    }
+    const global_long_pct = (global_long / total_global) * 100;
+    console.log(`Global long percentage: ${global_long_pct.toFixed(1)}%`);
+    if (global_long_pct >= 40 && global_long_pct <= 60) {
+      console.log(clc.green("Global positions are properly hedged!"));
+      rl.close();
+      return;
+    }
+    const needed_side = global_long_pct > 50 ? "SHORT" : "LONG";
+    const candidates = processableSymbols.filter(
+      (item) => item.minoritySide === needed_side
+    );
+    if (candidates.length === 0) {
+      console.log(`No symbols needing ${needed_side} hedge to balance global.`);
+      rl.close();
+      return;
+    }
+    console.log(
+      clc.yellow(
+        `Possible ${needed_side} hedges for global balance (${global_long_pct.toFixed(
+          1
+        )}% long):`
+      )
+    );
+    candidates.forEach((item, index) => {
+      console.log(
+        `${index + 1}. ${item.symbol}: est. required: $${Number(
+          item.avgInvestment
+        ).toFixed(4)}`
+      );
+    });
+    const idx = Math.floor(Math.random() * candidates.length);
+    const item = candidates[idx];
+    console.log(
+      clc.yellow(
+        `Auto-hedging 1 random ${needed_side} for ${
+          item.symbol
+        } (global ${global_long_pct.toFixed(1)}% long)`
+      )
+    );
+
     // Fetch current price and decimals first
     const { price: currentPrice, decimals } = await getTicker(item.symbol);
     if (currentPrice <= 0) {
       console.log(
         clc.red(`Could not fetch current price for ${item.symbol}, skipping.`)
       );
-      continue;
+      rl.close();
+      return;
     }
 
     // Round averages to decimals
@@ -228,20 +329,21 @@ const main = async () => {
       3, // Start high to get max
       leverage
     );
-    //console.log("Initial validate = ", validation);
 
     if (!validation) {
       console.log(
         clc.red(`Initial validation failed for ${item.symbol}, skipping.`)
       );
-      continue;
+      rl.close();
+      return;
     }
 
     let cell_number = validation.cell_number.to;
     if (cell_number < 3) {
       // Min sensible
       console.log(clc.red(`Insufficient cells for ${item.symbol}, skipping.`));
-      continue;
+      rl.close();
+      return;
     }
 
     // Run finalValidation up to 3 times to stabilize cell_number
@@ -269,7 +371,8 @@ const main = async () => {
             `Validation retry ${retry + 1} failed for ${item.symbol}, skipping.`
           )
         );
-        break;
+        rl.close();
+        return;
       }
 
       const newCellNumber = finalValidation.cell_number.to;
@@ -293,7 +396,8 @@ const main = async () => {
           `Could not determine investment after retries for ${item.symbol}, skipping.`
         )
       );
-      continue;
+      rl.close();
+      return;
     }
 
     // Use same amount, but ensure it's above min investment
@@ -301,52 +405,267 @@ const main = async () => {
       Number(amount),
       Number(finalValidation.investment.from) * 1.1
     );
+
+    let usePartial = false;
+    if (finalAmount > balance) {
+      if (
+        partialMin !== null &&
+        balance >= partialMin &&
+        balance >= Number(finalValidation.investment.from)
+      ) {
+        finalAmount = Number(balance);
+        usePartial = true;
+      } else {
+        console.log(
+          clc.red(
+            `Insufficient balance for ${
+              item.symbol
+            }: need $${finalAmount.toFixed(4)}, have $${balance}`
+          )
+        );
+        rl.close();
+        return;
+      }
+    }
+    if (usePartial) {
+      console.log(
+        clc.yellow(
+          `Using partial balance $${finalAmount.toFixed(4)} for ${item.symbol}`
+        )
+      );
+    }
     const grid_mode =
       item.minoritySide === "LONG"
         ? "FUTURE_GRID_MODE_LONG"
         : "FUTURE_GRID_MODE_SHORT";
 
-    let currentPriceStr =
-      currentPrice > 0 ? `$${currentPrice.toFixed(decimals)}` : "N/A";
+    console.log(
+      `Creating ${grid_mode.replace("FUTURE_GRID_MODE_", "")} hedge for ${
+        item.symbol
+      }...`
+    );
 
-    const prompt = `Create ${grid_mode.replace(
-      "FUTURE_GRID_MODE_",
-      ""
-    )} hedge for ${
-      item.symbol
-    }?\nCurrent Price: ${currentPriceStr}\nAmount: $${finalAmount.toFixed(
-      4
-    )}, Range: ${new_min_price}-${new_max_price}, Leverage: ${leverage}x, Cells: ${cell_number} (y/n): `;
-    const answer = await question(prompt);
-    if (answer.toLowerCase() === "y" || answer.toLowerCase() === "yes") {
+    const success = await createGrid(
+      finalAmount,
+      item.symbol,
+      new_min_price,
+      new_max_price,
+      cell_number,
+      leverage,
+      grid_mode,
+      grid_type
+    );
+    if (success) {
       console.log(
-        `Creating ${grid_mode.replace("FUTURE_GRID_MODE_", "")} hedge for ${
-          item.symbol
-        }...`
+        clc.green(`Successfully created hedge grid for ${item.symbol}!`)
       );
-      const success = await createGrid(
-        finalAmount,
+    } else {
+      console.log(clc.red(`Failed to create hedge grid for ${item.symbol}.`));
+    }
+    rl.close();
+    return;
+  } else {
+    // List already shown above, proceed to individual prompts
+
+    for (let item of processableSymbols) {
+      // Fetch current price and decimals first
+      const { price: currentPrice, decimals } = await getTicker(item.symbol);
+      if (currentPrice <= 0) {
+        console.log(
+          clc.red(`Could not fetch current price for ${item.symbol}, skipping.`)
+        );
+        continue;
+      }
+
+      // Round averages to decimals
+      const avgMinPriceRounded = Number(item.avgMinPrice).toFixed(decimals);
+      const avgMaxPriceRounded = Number(item.avgMaxPrice).toFixed(decimals);
+
+      // Calculate relative width from existing majority range
+      const avgCenter =
+        (Number(avgMinPriceRounded) + Number(avgMaxPriceRounded)) / 2;
+      const relativeWidth =
+        (Number(avgMaxPriceRounded) - Number(avgMinPriceRounded)) / avgCenter;
+
+      // Shifted center around current price in minority direction
+      let shiftedCenter;
+      if (item.minoritySide === "LONG") {
+        shiftedCenter = currentPrice * (1 + hedge_shift);
+      } else {
+        shiftedCenter = currentPrice * (1 - hedge_shift);
+      }
+
+      // New range around shifted center with same relative width
+      const halfRel = relativeWidth / 2;
+      const new_min_price = Number(shiftedCenter * (1 - halfRel)).toFixed(
+        decimals
+      );
+      const new_max_price = Number(shiftedCenter * (1 + halfRel)).toFixed(
+        decimals
+      );
+
+      const leverage = item.avgLeverage;
+      const amount = item.avgInvestment;
+
+      // Initial validation with high cell number to get max possible
+      let validation = await validateGrid(
         item.symbol,
         new_min_price,
         new_max_price,
-        cell_number,
-        leverage,
-        grid_mode,
-        grid_type
+        item.minoritySide === "LONG"
+          ? "FUTURE_GRID_MODE_LONG"
+          : "FUTURE_GRID_MODE_SHORT",
+        grid_type,
+        3, // Start high to get max
+        leverage
       );
-      if (success) {
-        console.log(
-          clc.green(`Successfully created hedge grid for ${item.symbol}!`)
-        );
-      } else {
-        console.log(clc.red(`Failed to create hedge grid for ${item.symbol}.`));
-      }
-    } else {
-      console.log(`Skipped ${item.symbol}.`);
-    }
-  }
+      //console.log("Initial validate = ", validation);
 
-  rl.close();
+      if (!validation) {
+        console.log(
+          clc.red(`Initial validation failed for ${item.symbol}, skipping.`)
+        );
+        continue;
+      }
+
+      let cell_number = validation.cell_number.to;
+      if (cell_number < 3) {
+        // Min sensible
+        console.log(
+          clc.red(`Insufficient cells for ${item.symbol}, skipping.`)
+        );
+        continue;
+      }
+
+      // Run finalValidation up to 3 times to stabilize cell_number
+      let finalValidation;
+      let prevCellNumber = 0;
+      for (let retry = 0; retry < 3; retry++) {
+        finalValidation = await validateGrid(
+          item.symbol,
+          new_min_price,
+          new_max_price,
+          item.minoritySide === "LONG"
+            ? "FUTURE_GRID_MODE_LONG"
+            : "FUTURE_GRID_MODE_SHORT",
+          grid_type,
+          cell_number,
+          leverage
+        );
+        console.log(
+          `Validation retry ${retry + 1}: cell_number = ${cell_number}`
+        );
+
+        if (!finalValidation) {
+          console.log(
+            clc.red(
+              `Validation retry ${retry + 1} failed for ${
+                item.symbol
+              }, skipping.`
+            )
+          );
+          break;
+        }
+
+        const newCellNumber = finalValidation.cell_number.to;
+        if (
+          newCellNumber >= cell_number &&
+          finalValidation.investment.from !== "0"
+        ) {
+          console.log("Cell number stabilized", cell_number);
+          cell_number = cell_number;
+          break; // Stabilized
+        }
+
+        prevCellNumber = cell_number;
+        cell_number = newCellNumber;
+        console.log("Cell number set to ", cell_number);
+      }
+
+      if (!finalValidation || !finalValidation.investment?.from) {
+        console.log(
+          clc.red(
+            `Could not determine investment after retries for ${item.symbol}, skipping.`
+          )
+        );
+        continue;
+      }
+
+      // Use same amount, but ensure it's above min investment
+      let finalAmount = Math.max(
+        Number(amount),
+        Number(finalValidation.investment.from) * 1.1
+      );
+      let usePartial = false;
+      if (finalAmount > balance) {
+        if (
+          partialMin !== null &&
+          balance >= partialMin &&
+          balance >= Number(finalValidation.investment.from)
+        ) {
+          finalAmount = balance;
+          usePartial = true;
+        } else {
+          console.log(
+            clc.red(
+              `Insufficient balance for ${
+                item.symbol
+              }: need $${finalAmount.toFixed(4)}, have $${balance}`
+            )
+          );
+          continue;
+        }
+      }
+      const grid_mode =
+        item.minoritySide === "LONG"
+          ? "FUTURE_GRID_MODE_LONG"
+          : "FUTURE_GRID_MODE_SHORT";
+
+      let currentPriceStr =
+        currentPrice > 0 ? `$${currentPrice.toFixed(decimals)}` : "N/A";
+
+      const amountStr = `$${finalAmount.toFixed(4)}${
+        usePartial ? " (partial)" : ""
+      }`;
+      const prompt = `Create ${grid_mode.replace(
+        "FUTURE_GRID_MODE_",
+        ""
+      )} hedge for ${
+        item.symbol
+      }?\nCurrent Price: ${currentPriceStr}\nAmount: ${amountStr}, Range: ${new_min_price}-${new_max_price}, Leverage: ${leverage}x, Cells: ${cell_number} (y/n): `;
+      const answer = await question(prompt);
+      if (answer.toLowerCase() === "y" || answer.toLowerCase() === "yes") {
+        console.log(
+          `Creating ${grid_mode.replace("FUTURE_GRID_MODE_", "")} hedge for ${
+            item.symbol
+          }...`
+        );
+        const success = await createGrid(
+          finalAmount,
+          item.symbol,
+          new_min_price,
+          new_max_price,
+          cell_number,
+          leverage,
+          grid_mode,
+          grid_type
+        );
+        if (success) {
+          console.log(
+            clc.green(`Successfully created hedge grid for ${item.symbol}!`)
+          );
+        } else {
+          console.log(
+            clc.red(`Failed to create hedge grid for ${item.symbol}.`)
+          );
+        }
+      } else {
+        console.log(`Skipped ${item.symbol}.`);
+      }
+    }
+
+    rl.close();
+  }
 };
 
 main();
