@@ -123,7 +123,7 @@ const main = async () => {
       "Sales",
       "PnL %",
     ],
-    colWidths: [15, 15, 15, 8, 8, 12, 12, 10, 10, 8, 8],
+    colWidths: [25, 15, 8, 12, 7, 14, 14, 12, 12, 7, 11],
     style: { head: ["cyan"] },
   });
 

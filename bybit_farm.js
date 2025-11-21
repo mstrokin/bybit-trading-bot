@@ -334,7 +334,7 @@ const CANCELLED_BOTS = new Map();
 
 const MAX_RETRIES = 3;
 
-const LOW_PNL_THRESHOLD = -24;
+const LOW_PNL_THRESHOLD = -40;
 
 const RESCUE_PNL_THRESHOLD = -60;
 
@@ -1075,7 +1075,7 @@ const farm = async () => {
 
   // Check for sacrifice to perform
   goodBotId = readSacrificeFile();
-  if (goodBotId && worstGrid && worstPnl < LOW_PNL_THRESHOLD) {
+  if (goodBotId && worstGrid && worstPnl < SACRIFICE_PNL_THRESHOLD) {
     // Perform sacrifice on the worst grid
     const sacrificed = await performSacrifice(worstGrid, goodBotId);
     if (sacrificed) {
