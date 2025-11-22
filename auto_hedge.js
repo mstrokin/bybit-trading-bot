@@ -99,8 +99,8 @@ const main = async () => {
   const balance = await getUSDFuturesBalance();
   if (!balance || Number(balance) <= 0) {
     console.log(clc.red("No available balance for hedging."));
-    rl.close();
-    return;
+    //rl.close();
+    //return;
   }
   console.log(`Available balance: $${balance}`);
   if (!grids || !grids.length) {
@@ -202,6 +202,13 @@ const main = async () => {
       )}) ${status}`
     );
   });
+  const totalRequired = nonHedgedSymbols.reduce(
+    (sum, item) => sum + Number(item.avgInvestment),
+    0
+  );
+  console.log(
+    `Total required balance to hedge all: $${totalRequired.toFixed(4)}`
+  );
 
   let processableSymbols;
   if (partialMin === null) {
